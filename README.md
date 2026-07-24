@@ -108,13 +108,3 @@ URLのうしろに `?role=guide` を付けて開くと、**水色の浮遊ロボ
 ```
 https://pixel-office-jqsm.onrender.com/?role=guide
 ```
-
-## 今後の拡張アイデア
-
-- 音声通話（近くの人の声が聞こえる）: LiveKit / Agora などのWebRTCサービスを組み込む
-- 入室パスワード
-- Slackステータス連携
-
----
-※このリポジトリは会社用(ruike-rgb)と個人用(tomokiyocom-del)の2か所にミラーされています。
-`git push` で両方に同時反映されます。
