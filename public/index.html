@@ -1,0 +1,1038 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ピクセルオフィス（ぴくおふ）</title>
+<style>
+  :root{
+    --bg:#1f1e1c; --panel:#2a2926; --line:#3a3835; --text:#e8e0d5; --accent:#d97757;
+    --dim:#8a847a;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;}
+  body{
+    background:var(--bg); color:var(--text);
+    font-family:"Hiragino Kaku Gothic ProN","Yu Gothic",monospace,sans-serif;
+    display:flex; flex-direction:column; align-items:center;
+    min-height:100vh; padding:16px;
+  }
+  h1{font-size:16px; letter-spacing:2px; color:var(--accent); margin-bottom:2px;}
+  .sub{font-size:11px; color:var(--dim); margin-bottom:10px;}
+  #main{display:flex; gap:12px; align-items:flex-start; flex-wrap:wrap; justify-content:center;}
+  canvas{
+    image-rendering:pixelated;
+    border:3px solid var(--line);
+    border-radius:8px;
+    background:#262523;
+    display:block;
+    cursor:pointer;
+  }
+  #side{width:230px; display:flex; flex-direction:column; gap:10px;}
+  .card{background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:10px;}
+  .card h3{font-size:11px; color:var(--dim); margin-bottom:6px; letter-spacing:1px;}
+  .btnrow{display:flex; gap:6px; flex-wrap:wrap;}
+  button{
+    background:#3a3835; border:none; color:var(--text); padding:6px 10px;
+    border-radius:6px; font-size:12px; cursor:pointer;
+  }
+  button:hover{filter:brightness(1.2);}
+  button.primary{background:var(--accent); color:#fff; font-weight:bold;}
+  button.active{outline:2px solid var(--accent);}
+  input[type=text]{
+    background:#1f1e1c; border:1px solid var(--line); color:var(--text);
+    padding:6px 8px; border-radius:6px; font-size:12px; width:100%; outline:none;
+  }
+  input[type=text]:focus{border-color:var(--accent);}
+  #memberList{font-size:11px; line-height:1.8; max-height:130px; overflow-y:auto;}
+  #chatlog{
+    font-size:11px; line-height:1.6; max-height:120px; overflow-y:auto;
+    display:flex; flex-direction:column; gap:2px; margin-bottom:6px;
+  }
+  #chatlog .sys{color:var(--dim);}
+  #chatlog b{color:var(--accent);}
+  .chatrow{display:flex; gap:6px;}
+  .chatrow input{flex:1;}
+  .hint{font-size:11px; color:var(--dim); margin-top:10px; text-align:center; line-height:1.7;}
+  #lockBtn{display:none;}
+  #conn{font-size:11px;}
+  /* 入室オーバーレイ */
+  #joinOverlay{
+    position:fixed; inset:0; background:rgba(20,19,17,.9); z-index:10;
+    display:flex; align-items:center; justify-content:center;
+  }
+  #joinCard{
+    background:var(--panel); border:1px solid var(--line); border-radius:12px;
+    padding:28px; width:320px; display:flex; flex-direction:column; gap:14px;
+  }
+  #joinCard h2{font-size:16px; color:var(--accent); letter-spacing:1px;}
+  #joinCard p{font-size:11px; color:var(--dim); line-height:1.6;}
+  .swatches{display:flex; gap:8px; flex-wrap:wrap;}
+  .swatch{
+    width:28px; height:28px; border-radius:6px; cursor:pointer; border:2px solid transparent;
+  }
+  .swatch.sel{border-color:#fff;}
+  #joinBtn{padding:10px; font-size:14px;}
+  #joinErr{color:#d95757; font-size:11px; min-height:14px;}
+</style>
+</head>
+<body>
+<h1>▚ PIXEL OFFICE ▞ <span style="font-size:11px;color:var(--dim);letter-spacing:1px;">ぴくおふ</span></h1>
+<div class="sub">矢印キー / WASD で移動 ・ 床クリックでも移動 ・ 近づくと会話サークル</div>
+<div id="main">
+  <canvas id="cv" width="960" height="600"></canvas>
+  <div id="side">
+    <div class="card">
+      <h3>MEMBERS <span id="count"></span></h3>
+      <div id="memberList"></div>
+      <div id="conn">🔌 接続中…</div>
+    </div>
+    <div class="card">
+      <h3>MY STATUS</h3>
+      <div class="btnrow">
+        <button id="stActive" class="active">🟢 在席</button>
+        <button id="stBusy">🔴 取り込み中</button>
+        <button id="stAway">🟡 離席</button>
+      </div>
+      <div class="btnrow" style="margin-top:6px;">
+        <button class="emote">👋</button><button class="emote">👍</button>
+        <button class="emote">🎉</button><button class="emote">😂</button>
+        <button class="emote">☕</button><button class="emote">💡</button>
+      </div>
+      <div class="btnrow" style="margin-top:6px;">
+        <button id="lockBtn">🔒 会議室を施錠</button>
+        <button id="timeBtn">🕒 時間：自動</button>
+      </div>
+    </div>
+    <div class="card">
+      <h3>CHAT</h3>
+      <div id="chatlog"></div>
+      <div class="chatrow">
+        <input type="text" id="chatInput" placeholder="メッセージ…" maxlength="60">
+        <button id="sendBtn">送信</button>
+      </div>
+      <div class="btnrow" style="margin-top:6px;">
+        <button id="megaBtn">📢 メガホン（全体放送）</button>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="hint">
+  🟢のメンバー同士が近づくと会話サークルができます（🔴取り込み中は繋がりません）。<br>
+  会議室に入ると部屋のメンバー全員が同じ会話に。施錠すると他のメンバーは入れません。3分間操作がないと自動で離席になります。
+</div>
+
+<!-- 入室画面 -->
+<div id="joinOverlay">
+  <div id="joinCard">
+    <h2>▚ PIXEL OFFICE ▞</h2>
+    <p style="font-size:12px;color:var(--accent);margin-top:-6px;">ピクセルオフィス・ぴくおふ</p>
+    <p>なまえと色を選んで入室してください。<br>同じURLを開いた人と同じオフィスに入ります。</p>
+    <input type="text" id="joinName" placeholder="なまえ" maxlength="10">
+    <div class="swatches" id="swatches"></div>
+    <div id="joinErr"></div>
+    <button class="primary" id="joinBtn">入室する</button>
+  </div>
+</div>
+
+<script>
+"use strict";
+const cv = document.getElementById("cv");
+const g  = cv.getContext("2d");
+const SCALE = 3;
+const MAP_W = 480, MAP_H = 300;
+const VW = cv.width / SCALE, VH = cv.height / SCALE;
+const CALL_DIST = 26;
+g.imageSmoothingEnabled = false;
+
+const CHAR_COLORS = ["#d97757","#7ba7c7","#8fbc7f","#c7a35e","#b08bc9","#c97b93","#6fbfb0","#c98a5e","#89a86e","#7f8fc7"];
+const EYE = "#241a12";
+const WALL_TOP = 22;
+
+// ---------- マップ（v2と同一レイアウト） ----------
+const desks = [];
+for (let row=0; row<5; row++){
+  for (let col=0; col<5; col++){
+    const d = {x: 24 + col*50, y: 44 + row*38, w: 26, h: 11};
+    d.spot = {x: d.x + d.w/2, y: d.y + d.h + 8};
+    desks.push(d);
+  }
+}
+function makeRoom(id, label, x, y, w, h){
+  const doorY = y + h/2;
+  return {id, label, x, y, w, h,
+    door: {ox: x - 8, oy: doorY, ix: x + 12, iy: doorY, gap: 16},
+    table: {x: x + w/2 - 20, y: y + h/2 - 6, w: 40, h: 14}};
+}
+const rooms = [makeRoom("A","会議室A",302,36,86,76), makeRoom("B","会議室B",302,126,86,76)];
+let roomLocks = {A:false, B:false};
+
+const walls = [];
+for (const r of rooms){
+  const T = 3;
+  walls.push({x:r.x, y:r.y, w:r.w, h:T});
+  walls.push({x:r.x, y:r.y+r.h-T, w:r.w, h:T});
+  walls.push({x:r.x+r.w-T, y:r.y, w:T, h:r.h});
+  const gapTop = r.door.oy - r.door.gap/2, gapBot = r.door.oy + r.door.gap/2;
+  walls.push({x:r.x, y:r.y, w:T, h:gapTop-r.y});
+  walls.push({x:r.x, y:gapBot, w:T, h:r.y+r.h-gapBot});
+}
+const booths = [];
+for (let i=0;i<4;i++){
+  const b = {x: 24 + i*52, y: 236, w: 26, h: 30};
+  booths.push(b);
+}
+const rug = {x:306, y:218, w:128, h:66};
+const sofas = [{x:318,y:232,w:38,h:10},{x:318,y:264,w:38,h:10}];
+const loungeTable = {x:372,y:244,w:20,h:14};
+const coffee = {x:440,y:214,w:16,h:22};
+const plants = [{x:8,y:26},{x:464,y:26},{x:288,y:268},{x:460,y:268},{x:288,y:30}];
+
+function roomAt(x, y){
+  for (const r of rooms) if (x > r.x && x < r.x+r.w && y > r.y && y < r.y+r.h) return r;
+  return null;
+}
+let playerInRoomId = null; // 施錠判定用（部屋の中にいる人は出られる）
+function hitsWall(x, y){
+  if (x < 12 || x > MAP_W-12 || y < WALL_TOP+12 || y > MAP_H-8) return true;
+  for (const w of walls){
+    if (x > w.x-3 && x < w.x+w.w+3 && y > w.y-1 && y < w.y+w.h+5) return true;
+  }
+  const r = roomAt(x, y);
+  if (r && roomLocks[r.id] && playerInRoomId !== r.id) return true; // 施錠中は入れない
+  return false;
+}
+
+// ---------- 状態 ----------
+let selfId = null;
+let player = null;           // 自分
+const remotes = new Map();   // id -> リモートプレイヤー
+let emotes = [];
+let megaphone = null;
+let callGroups = [];
+const cam = {x:0, y:0};
+let lastInputAt = Date.now();
+let autoAway = false;
+const IS_GUIDE = new URLSearchParams(location.search).get("role") === "guide";
+// --- アンビエント演出（ペット・来訪者・昼夜）: すべて各自の画面ローカル ---
+let phaseOverride = null;          // null=実時刻に自動追従
+const pets = [];
+let visitor = null;
+let visitorCooldown = 20 + Math.random()*20;
+
+function makeAvatar(name, color){
+  return {name, color, x:245, y:282, tx:245, ty:282,
+    path:[], moving:false, status:"active",
+    bubble:null, bubbleTimer:0, blink:0, inCall:false, isPlayer:false, guide:false};
+}
+
+// ---------- ネットワーク ----------
+let es = null;
+const connEl = document.getElementById("conn");
+
+async function join(name, color){
+  const res = await fetch("/api/join", {method:"POST", body:JSON.stringify({name, color, guide: IS_GUIDE})});
+  const j = await res.json();
+  if (j.error){ throw new Error(j.error); }
+  selfId = j.id;
+  player = makeAvatar(name, color);
+  player.isPlayer = true;
+  player.guide = IS_GUIDE;
+  player.x = j.spawn.x; player.y = j.spawn.y;
+  roomLocks = j.locks || roomLocks;
+  for (const ev of (j.chat || [])){
+    if (ev.type === "chat") addLog(ev.name, ev.text);
+    if (ev.type === "mega") addLog(null, `📢 ${ev.name}: ${ev.text}`, true);
+  }
+  localStorage.setItem("pixeloffice_name", name);
+  localStorage.setItem("pixeloffice_color", color);
+  connectSSE();
+  sendUpdate(true);
+  addLog(null, "ようこそ！矢印キーで移動できます", true);
+}
+
+function connectSSE(){
+  es = new EventSource("/events?id=" + selfId);
+  es.onopen = () => { connEl.textContent = "🟢 接続中"; };
+  es.onerror = () => { connEl.textContent = "🔌 再接続中…"; };
+  es.onmessage = e => {
+    let m; try{ m = JSON.parse(e.data); }catch(_){ return; }
+    applySnapshot(m);
+  };
+}
+
+function applySnapshot(m){
+  roomLocks = m.locks || roomLocks;
+  const seen = new Set();
+  for (const [id, a] of Object.entries(m.p || {})){
+    if (id === selfId) continue;
+    seen.add(id);
+    let r = remotes.get(id);
+    if (!r){
+      r = makeAvatar(a[4], a[5]);
+      r.x = a[0]; r.y = a[1];
+      remotes.set(id, r);
+    }
+    r.tx = a[0]; r.ty = a[1];
+    r.moving = !!a[2]; r.status = a[3];
+    r.name = a[4]; r.color = a[5]; r.guide = !!a[6];
+    if (document.hidden){ r.x = r.tx; r.y = r.ty; } // 非表示タブでは補間せず即反映
+  }
+  for (const id of [...remotes.keys()]) if (!seen.has(id)) remotes.delete(id);
+  for (const ev of (m.ev || [])) handleEvent(ev);
+  updateMembers();
+}
+
+function handleEvent(ev){
+  switch (ev.type){
+    case "join": addLog(null, `→ ${ev.name} が入室しました`, true); break;
+    case "leave": addLog(null, `← ${ev.name} が退室しました`, true); break;
+    case "chat": {
+      const av = ev.id === selfId ? player : remotes.get(ev.id);
+      if (av) say(av, ev.text, 4);
+      addLog(ev.name, ev.text);
+      break;
+    }
+    case "mega":
+      megaphone = {text: ev.text, from: ev.name, timer: 6};
+      addLog(null, `📢 ${ev.name}: ${ev.text}`, true);
+      break;
+    case "emote": {
+      const av = ev.id === selfId ? player : remotes.get(ev.id);
+      if (av) emotes.push({x: av.x, y: av.y - 20, emoji: ev.emoji, t: 0});
+      break;
+    }
+    case "lock":
+      addLog(null, ev.locked ? `🔒 ${ev.name} が会議室${ev.room}を施錠しました`
+                             : `🔓 ${ev.name} が会議室${ev.room}を解錠しました`, true);
+      break;
+  }
+}
+
+let lastSent = 0, lastSentPos = null;
+function sendUpdate(force){
+  if (!selfId || !player) return;
+  const now = Date.now();
+  const posChanged = !lastSentPos ||
+    Math.abs(player.x - lastSentPos.x) > 0.5 || Math.abs(player.y - lastSentPos.y) > 0.5 ||
+    player.moving !== lastSentPos.moving || player.status !== lastSentPos.status;
+  if (!force && (!posChanged && now - lastSent < 5000)) return;
+  if (!force && posChanged && now - lastSent < 90) return;
+  lastSent = now;
+  lastSentPos = {x: player.x, y: player.y, moving: player.moving, status: player.status};
+  fetch("/api/update", {method:"POST", body:JSON.stringify({
+    id: selfId, x: player.x, y: player.y, moving: player.moving, status: player.status
+  })}).catch(()=>{});
+}
+setInterval(() => sendUpdate(false), 100);
+
+function sendEvent(payload){
+  if (!selfId) return;
+  fetch("/api/event", {method:"POST", body:JSON.stringify({id: selfId, ...payload})}).catch(()=>{});
+}
+
+// ---------- 更新 ----------
+const keys = {};
+function typingNow(){
+  const el = document.activeElement;
+  return el && el.tagName === "INPUT";
+}
+function say(c, text, dur){ c.bubble = text; c.bubbleTimer = dur; }
+
+function update(dt, t){
+  if (!player) return;
+  playerInRoomId = roomAt(player.x, player.y)?.id || null;
+
+  // --- 自分の移動 ---
+  if (!typingNow()){
+    let dx = 0, dy = 0;
+    if (keys["ArrowLeft"] || keys["a"]) dx -= 1;
+    if (keys["ArrowRight"]|| keys["d"]) dx += 1;
+    if (keys["ArrowUp"]   || keys["w"]) dy -= 1;
+    if (keys["ArrowDown"] || keys["s"]) dy += 1;
+    if (dx || dy){
+      player.path = [];
+      const sp = 42 * dt, len = Math.hypot(dx, dy);
+      const nx = player.x + dx/len*sp, ny = player.y + dy/len*sp;
+      if (!hitsWall(nx, player.y)) player.x = nx;
+      if (!hitsWall(player.x, ny)) player.y = ny;
+      player.moving = true;
+      markInput();
+    } else if (player.path.length === 0){
+      player.moving = false;
+    }
+  }
+  // クリック移動の経路
+  if (player.path.length){
+    const p = player.path[0];
+    const dx = p.x - player.x, dy = p.y - player.y;
+    const dist = Math.hypot(dx, dy);
+    if (dist < 2){
+      player.x = p.x; player.y = p.y; player.path.shift();
+      if (!player.path.length) player.moving = false;
+    } else {
+      player.x += dx/dist * 42 * dt;
+      player.y += dy/dist * 42 * dt;
+      player.moving = true;
+    }
+  }
+
+  // --- リモートの補間 ---
+  for (const r of remotes.values()){
+    const k = Math.min(1, dt * 12);
+    r.x += (r.tx - r.x) * k;
+    r.y += (r.ty - r.y) * k;
+  }
+
+  // まばたき・吹き出し
+  for (const c of allAvatars()){
+    c.blink -= dt;
+    if (c.blink < -3 - Math.random()*3) c.blink = 0.15;
+    if (c.bubbleTimer > 0){ c.bubbleTimer -= dt; if (c.bubbleTimer <= 0) c.bubble = null; }
+  }
+
+  // --- 会話グループ ---
+  const callable = allAvatars().filter(c => c.status === "active");
+  const parent = new Map(); callable.forEach(c => parent.set(c, c));
+  const find = c => { while (parent.get(c) !== c) c = parent.get(c); return c; };
+  const union = (a,b) => { const ra = find(a), rb = find(b); if (ra !== rb) parent.set(ra, rb); };
+  for (let i=0;i<callable.length;i++){
+    for (let j=i+1;j<callable.length;j++){
+      const a = callable[i], b = callable[j];
+      const ra = roomAt(a.x,a.y), rb = roomAt(b.x,b.y);
+      if (ra || rb){ if (ra === rb) union(a,b); continue; }
+      if (Math.hypot(a.x-b.x, a.y-b.y) < CALL_DIST) union(a,b);
+    }
+  }
+  const groupMap = new Map();
+  for (const c of callable){
+    const root = find(c);
+    if (!groupMap.has(root)) groupMap.set(root, []);
+    groupMap.get(root).push(c);
+  }
+  callGroups = [];
+  for (const c of allAvatars()) c.inCall = false;
+  for (const members of groupMap.values()){
+    if (members.length >= 2){
+      callGroups.push(members);
+      members.forEach(m => m.inCall = true);
+    }
+  }
+
+  for (const e of emotes) e.t += dt;
+  emotes = emotes.filter(e => e.t < 1.8);
+  if (megaphone){ megaphone.timer -= dt; if (megaphone.timer <= 0) megaphone = null; }
+
+  updatePets(dt, t);
+  updateVisitor(dt, t);
+
+  // 自動離席（3分無操作）
+  if (!player.guide && player.status === "active" && Date.now() - lastInputAt > 180000){
+    autoAway = true; setStatus("away");
+  }
+
+  cam.x = Math.max(0, Math.min(MAP_W - VW, player.x - VW/2));
+  cam.y = Math.max(0, Math.min(MAP_H - VH, player.y - VH/2));
+  updateLockBtn();
+}
+
+function allAvatars(){
+  return player ? [player, ...remotes.values()] : [...remotes.values()];
+}
+function markInput(){
+  lastInputAt = Date.now();
+  if (autoAway && player && player.status === "away"){ autoAway = false; setStatus("active"); }
+}
+
+// ========== アンビエント演出（ペット・来訪者・昼夜） ==========
+function makePet(type){
+  const skin = type === "dog" ? {body:"#c39a6b", dark:"#8a5a3a"} : {body:"#9a9a9a", dark:"#666666"};
+  return {type, body:skin.body, dark:skin.dark,
+    x: 90 + Math.random()*120, y: 150 + Math.random()*80,
+    tx: 0, ty: 0, state:"idle", timer: 1 + Math.random()*3,
+    moving:false, face:1, bubble:null, bubbleTimer:0};
+}
+function updatePets(dt, t){
+  for (const p of pets){
+    if (p.bubbleTimer > 0){ p.bubbleTimer -= dt; if (p.bubbleTimer <= 0) p.bubble = null; }
+    if (p.state === "walk"){
+      const dx = p.tx - p.x, dy = p.ty - p.y, d = Math.hypot(dx, dy);
+      if (d < 2){ p.moving = false; p.state = "idle"; p.timer = 1 + Math.random()*3; }
+      else {
+        const sp = (p.type === "dog" ? 20 : 15) * dt;
+        p.x += dx/d*sp; p.y += dy/d*sp; p.face = dx < 0 ? -1 : 1; p.moving = true;
+      }
+    } else {
+      p.timer -= dt;
+      if (p.timer <= 0){
+        const r = Math.random();
+        if (r < 0.55){
+          let nx = 24 + Math.random()*250, ny = WALL_TOP + 28 + Math.random()*(MAP_H - WALL_TOP - 56);
+          const avs = allAvatars().filter(a => !roomAt(a.x, a.y));   // たまに誰かの近くへ
+          if (Math.random() < 0.45 && avs.length){
+            const a = avs[Math.floor(Math.random()*avs.length)];
+            nx = a.x + (Math.random()*36 - 18); ny = a.y + (Math.random()*28 - 6);
+          }
+          if (!hitsWall(nx, ny)){ p.tx = nx; p.ty = ny; p.state = "walk"; p.moving = true; }
+          else { p.timer = 1 + Math.random()*2; }
+        } else if (r < 0.8){
+          const words = p.type === "dog" ? ["ワンワン！","わんっ","くぅ〜ん"] : ["にゃ〜","にゃっ","ゴロゴロ…"];
+          p.bubble = words[Math.floor(Math.random()*words.length)];
+          p.bubbleTimer = 2.2; p.timer = 2 + Math.random()*3;
+        } else {
+          p.timer = 2 + Math.random()*3;
+        }
+      }
+    }
+  }
+}
+
+const VISITOR_TYPES = [
+  {name:"ピザ屋さん", cap:"#c0392b", line:"ピザ お届けでーす🍕", item:"#e8b84a"},
+  {name:"宅配便",     cap:"#4a7a3a", line:"お荷物でーす📦",      item:"#b98a5a"},
+  {name:"郵便屋さん", cap:"#3a5a8a", line:"郵便でーす✉️",        item:"#f0efe8"},
+];
+function spawnVisitor(){
+  const tp = VISITOR_TYPES[Math.floor(Math.random()*VISITOR_TYPES.length)];
+  visitor = {name:tp.name, cap:tp.cap, line:tp.line, item:tp.item,
+    x: 250, y: MAP_H + 8, tx: 246, ty: MAP_H - 46,
+    state:"enter", timer: 0, moving:true, face:-1, bubble:null, bubbleTimer:0};
+  addLog(null, `🔔 ${tp.name} がやってきました`, true);
+}
+function stepVisitor(v, dt, toX, toY, speed){
+  const dx = toX - v.x, dy = toY - v.y, d = Math.hypot(dx, dy);
+  if (d < 2){ v.x = toX; v.y = toY; v.moving = false; return true; }
+  const sp = speed * dt; v.x += dx/d*sp; v.y += dy/d*sp;
+  v.face = dx < 0 ? -1 : 1; v.moving = true; return false;
+}
+function updateVisitor(dt, t){
+  if (visitor){
+    const v = visitor;
+    if (v.bubbleTimer > 0){ v.bubbleTimer -= dt; if (v.bubbleTimer <= 0) v.bubble = null; }
+    if (v.state === "enter"){
+      if (stepVisitor(v, dt, v.tx, v.ty, 34)){ v.state = "wait"; v.timer = 5; v.bubble = v.line; v.bubbleTimer = 5; }
+    } else if (v.state === "wait"){
+      v.timer -= dt;
+      if (v.timer <= 0) v.state = "leave";
+    } else {
+      if (stepVisitor(v, dt, 250, MAP_H + 14, 34)) visitor = null;
+    }
+  } else {
+    visitorCooldown -= dt;
+    if (visitorCooldown <= 0){ spawnVisitor(); visitorCooldown = 70 + Math.random()*80; }
+  }
+}
+
+function getPhase(){
+  if (phaseOverride) return phaseOverride;
+  const h = new Date().getHours();
+  if (h >= 5 && h < 10) return "morning";
+  if (h >= 10 && h < 16) return "day";
+  if (h >= 16 && h < 19) return "evening";
+  return "night";
+}
+const PHASE_SKY  = {morning:"#9fb8cf", day:"#a9d2ea", evening:"#e39158", night:"#16233f"};
+const PHASE_TINT = {morning:["#ffdca8",0.07], day:[null,0], evening:["#ff7f3c",0.15], night:["#0f1838",0.42]};
+
+function drawWorldBubble(wx, wy, text){
+  const sx = (wx - cam.x) * SCALE, sy = (wy - cam.y) * SCALE;
+  if (sx < -60 || sx > cv.width + 60 || sy < -40 || sy > cv.height + 40) return;
+  g.font = "10px sans-serif"; g.textAlign = "center";
+  const tw = Math.max(g.measureText(text).width + 10, 20);
+  const bx = sx - tw/2, by = sy - 44;
+  g.fillStyle = "#f5efe4"; roundRect(bx, by, tw, 16, 5); g.fill();
+  g.beginPath(); g.moveTo(sx-3, by+16); g.lineTo(sx+3, by+16); g.lineTo(sx, by+21); g.fill();
+  g.fillStyle = "#2a2521"; g.fillText(text, sx, by + 11);
+}
+function drawDog(p, t){
+  const x = Math.round(p.x), y = Math.round(p.y), f = p.face;
+  g.fillStyle = "rgba(0,0,0,.25)"; g.fillRect(x-5, y, 11, 2);
+  const step = p.moving ? Math.floor(t/150)%2 : 0;
+  const wag = p.moving ? Math.round(Math.sin(t/90)*2) : Math.round(Math.sin(t/300));
+  g.fillStyle = p.body; g.fillRect(x + (f>0?-6:5), y-6+wag, 2, 3);   // しっぽ
+  g.fillRect(x-4, y-6, 9, 5);                                        // 胴
+  const hx = x + (f>0 ? 3 : -6);
+  g.fillRect(hx, y-9, 5, 5);                                         // 頭
+  g.fillStyle = p.dark; g.fillRect(hx + (f>0?4:-1), y-9, 2, 3);      // 耳
+  g.fillStyle = "#241a12";
+  g.fillRect(hx + (f>0?4:0), y-6, 1, 1);                             // 鼻
+  g.fillRect(hx + (f>0?1:3), y-7, 1, 1);                             // 目
+  g.fillStyle = p.dark;
+  if (step===0){ g.fillRect(x-3, y-1, 2, 2); g.fillRect(x+2, y-1, 2, 2); }
+  else { g.fillRect(x-2, y-1, 2, 2); g.fillRect(x+3, y-1, 2, 2); }
+}
+function drawCat(p, t){
+  const x = Math.round(p.x), y = Math.round(p.y), f = p.face;
+  g.fillStyle = "rgba(0,0,0,.25)"; g.fillRect(x-5, y, 11, 2);
+  const step = p.moving ? Math.floor(t/180)%2 : 0;
+  const sway = Math.round(Math.sin(t/220)*2);
+  g.fillStyle = p.body;
+  g.fillRect(x + (f>0?-6:5), y-8, 2, 3);                             // しっぽ根本
+  g.fillRect(x + (f>0?-6:5)+sway, y-11, 2, 3);                       // しっぽ先
+  g.fillRect(x-4, y-5, 9, 4);                                        // 胴
+  const hx = x + (f>0 ? 3 : -6);
+  g.fillRect(hx, y-9, 5, 5);                                         // 頭
+  g.fillRect(hx, y-11, 2, 2); g.fillRect(hx+3, y-11, 2, 2);          // 耳（とがり）
+  g.fillStyle = "#3a7a4a"; g.fillRect(hx + (f>0?1:3), y-7, 1, 1);    // 目
+  g.fillStyle = p.dark;
+  if (step===0){ g.fillRect(x-3, y-1, 2, 2); g.fillRect(x+2, y-1, 2, 2); }
+  else { g.fillRect(x-2, y-1, 2, 2); g.fillRect(x+3, y-1, 2, 2); }
+}
+function drawVisitor(v, t){
+  const p = 2;
+  const x = Math.round(v.x - 7), y = Math.round(v.y - 16);
+  g.fillStyle = "rgba(0,0,0,.3)"; g.fillRect(x+1, Math.round(v.y)-1, 13, 2);
+  const bob = v.moving ? Math.floor(t/130)%2 : 0; const by = y + bob;
+  g.fillStyle = "#e6e2d8"; g.fillRect(x, by+3*p, 7*p, 4*p);          // 制服
+  g.fillStyle = "#e0b48a"; g.fillRect(x+1*p, by+2*p, 5*p, 2*p);      // 顔
+  g.fillStyle = EYE; g.fillRect(x+2*p, by+2*p+1, 1, 1); g.fillRect(x+4*p, by+2*p+1, 1, 1);
+  g.fillStyle = v.cap; g.fillRect(x, by, 7*p, 2*p); g.fillRect(x-1, by+2*p-1, 8*p+2, 1); // キャップ
+  g.fillStyle = "#3a3835";
+  const step = v.moving ? Math.floor(t/130)%2 : 0;
+  if (step===0){ g.fillRect(x+1*p, by+7*p, 2, 2*p); g.fillRect(x+5*p, by+7*p, 2, 2*p); }
+  else { g.fillRect(x+2*p, by+7*p, 2, 2*p); g.fillRect(x+4*p, by+7*p, 2, 2*p); }
+  g.fillStyle = v.item; g.fillRect(x+2*p, by+4*p, 4*p, 3*p);         // 荷物
+  g.fillStyle = "rgba(0,0,0,.2)"; g.fillRect(x+2*p, by+5*p, 4*p, 1);
+}
+
+// ---------- 描画 ----------
+function drawWorld(t){
+  g.setTransform(SCALE, 0, 0, SCALE, -cam.x*SCALE, -cam.y*SCALE);
+  const x0 = Math.floor(cam.x/8)*8, y0 = Math.floor(cam.y/8)*8;
+  for (let y=y0; y<cam.y+VH; y+=8){
+    for (let x=x0; x<cam.x+VW; x+=8){
+      g.fillStyle = ((x/8 + y/8) % 2 === 0) ? "#2b2926" : "#2f2c29";
+      g.fillRect(x, y, 8, 8);
+    }
+  }
+  g.fillStyle = "#3a3733"; g.fillRect(0, 0, MAP_W, WALL_TOP);
+  g.fillStyle = "#33302c"; g.fillRect(0, WALL_TOP-3, MAP_W, 3);
+  const phase = getPhase();
+  const sky = PHASE_SKY[phase];
+  for (let wx=20; wx<MAP_W-40; wx+=64){
+    g.fillStyle = "#4a4740"; g.fillRect(wx, 3, 36, 16);
+    g.fillStyle = sky; g.fillRect(wx+2, 5, 32, 12);
+    if (phase === "night"){
+      g.fillStyle = "#e8d27a";
+      for (let s=0;s<5;s++) g.fillRect(wx+4+((s*13+wx)%27), 7+((s*7)%8), 2, 2);
+    } else if (phase === "evening"){
+      g.fillStyle = "#ffd08a"; g.fillRect(wx+24, 12, 5, 5);          // 夕日
+    } else {
+      g.fillStyle = "#fff2c8"; g.fillRect(wx+6, 7, 5, 5);           // 太陽
+      g.fillStyle = "rgba(255,255,255,.6)"; g.fillRect(wx+16, 9, 8, 2); g.fillRect(wx+20, 12, 6, 2); // 雲
+    }
+    g.fillStyle = "#4a4740"; g.fillRect(wx+16, 5, 2, 12);           // 窓枠
+  }
+  g.fillStyle = "#d97757"; g.fillRect(250, 4, 12, 15);
+  g.fillStyle = "#f0e5d8"; g.fillRect(252, 6, 8, 2); g.fillRect(252, 10, 8, 2); g.fillRect(252, 14, 5, 2);
+  g.fillStyle = "#5a4436"; g.fillRect(rug.x, rug.y, rug.w, rug.h);
+  g.fillStyle = "#6b5342"; g.fillRect(rug.x+3, rug.y+3, rug.w-6, rug.h-6);
+
+  for (const r of rooms){
+    const members = allAvatars().filter(c => roomAt(c.x,c.y) === r && c.status === "active");
+    g.fillStyle = members.length >= 2 ? "rgba(110,190,140,.10)" : "rgba(255,255,255,.03)";
+    g.fillRect(r.x, r.y, r.w, r.h);
+  }
+  for (const grp of callGroups){
+    if (roomAt(grp[0].x, grp[0].y)) continue;
+    let cx=0, cy=0; grp.forEach(m => {cx+=m.x; cy+=m.y;});
+    cx/=grp.length; cy/=grp.length;
+    let rad = 16;
+    grp.forEach(m => rad = Math.max(rad, Math.hypot(m.x-cx, m.y-cy) + 14));
+    g.fillStyle = "rgba(110,190,140,.13)";
+    g.beginPath(); g.arc(cx, cy, rad, 0, Math.PI*2); g.fill();
+    g.strokeStyle = "rgba(110,190,140,.5)"; g.lineWidth = 1;
+    g.beginPath(); g.arc(cx, cy, rad, 0, Math.PI*2); g.stroke();
+  }
+
+  const items = [];
+  for (const d of desks) items.push({y: d.y + d.h, draw: () => drawDesk(d, t)});
+  for (const b of booths) items.push({y: b.y + 6, draw: () => drawBooth(b)});
+  for (const s of sofas) items.push({y: s.y + s.h, draw: () => drawSofa(s)});
+  items.push({y: loungeTable.y + loungeTable.h, draw: () => drawLoungeTable()});
+  items.push({y: coffee.y + coffee.h, draw: () => drawCoffee()});
+  for (const p of plants) items.push({y: p.y + 18, draw: () => drawPlant(p)});
+  for (const r of rooms) items.push({y: r.y + r.h, draw: () => drawRoom(r, t)});
+  for (const c of allAvatars()) items.push({y: c.y, draw: () => drawChar(c, t)});
+  for (const p of pets) items.push({y: p.y, draw: () => (p.type === "dog" ? drawDog : drawCat)(p, t)});
+  if (visitor) items.push({y: visitor.y, draw: () => drawVisitor(visitor, t)});
+  items.sort((a,b) => a.y - b.y);
+  for (const it of items) it.draw();
+
+  g.font = "8px sans-serif"; g.textAlign = "center";
+  for (const e of emotes){
+    g.globalAlpha = Math.max(0, 1 - e.t/1.8);
+    g.fillText(e.emoji, e.x, e.y - e.t*10);
+  }
+  g.globalAlpha = 1;
+
+  // スクリーン座標
+  g.setTransform(1, 0, 0, 1, 0, 0);
+  // 昼夜のライティング（オフィス全体を薄く着色）
+  const tnt = PHASE_TINT[getPhase()];
+  if (tnt[0]){ g.globalAlpha = tnt[1]; g.fillStyle = tnt[0]; g.fillRect(0, 0, cv.width, cv.height); g.globalAlpha = 1; }
+  for (const c of allAvatars()){
+    const sx = (c.x - cam.x) * SCALE, sy = (c.y - cam.y) * SCALE;
+    if (sx < -40 || sx > cv.width + 40 || sy < -60 || sy > cv.height + 40) continue;
+    g.font = "bold 10px monospace"; g.textAlign = "center";
+    g.fillStyle = "rgba(0,0,0,.45)";
+    const nw = g.measureText(c.name).width + 8;
+    g.fillRect(sx - nw/2, sy + 6, nw, 12);
+    g.fillStyle = c.guide ? "#7fe0d4" : (c.isPlayer ? "#ffd97a" : "#e8e0d5");
+    g.fillText((c.guide ? "🧭 " : "") + c.name, sx, sy + 15);
+    if (c.bubble){
+      g.font = "11px sans-serif";
+      const tw = Math.max(g.measureText(c.bubble).width + 12, 22);
+      const bx = sx - tw/2, by = sy - 72;
+      g.fillStyle = "#f5efe4";
+      roundRect(bx, by, tw, 18, 5); g.fill();
+      g.beginPath(); g.moveTo(sx-3, by+18); g.lineTo(sx+3, by+18); g.lineTo(sx, by+23); g.fill();
+      g.fillStyle = "#2a2521";
+      g.fillText(c.bubble, sx, by + 13);
+    }
+  }
+  for (const p of pets) if (p.bubble) drawWorldBubble(p.x, p.y - 12, p.bubble);
+  if (visitor && visitor.bubble) drawWorldBubble(visitor.x, visitor.y - 16, visitor.bubble);
+  if (megaphone){
+    g.font = "bold 13px sans-serif"; g.textAlign = "center";
+    const text = `📢 ${megaphone.from}: ${megaphone.text}`;
+    const tw = g.measureText(text).width + 24;
+    g.fillStyle = "rgba(217,119,87,.92)";
+    roundRect(cv.width/2 - tw/2, 12, tw, 28, 8); g.fill();
+    g.fillStyle = "#fff";
+    g.fillText(text, cv.width/2, 31);
+  }
+  // ミニマップ
+  const MM_W = 96, MM_H = 60, mx = cv.width - MM_W - 10, my = cv.height - MM_H - 10;
+  g.fillStyle = "rgba(20,19,17,.8)"; g.fillRect(mx, my, MM_W, MM_H);
+  g.strokeStyle = "#4a4740"; g.strokeRect(mx, my, MM_W, MM_H);
+  const kx = MM_W / MAP_W, ky = MM_H / MAP_H;
+  g.fillStyle = "rgba(255,255,255,.12)";
+  for (const r of rooms) g.fillRect(mx + r.x*kx, my + r.y*ky, r.w*kx, r.h*ky);
+  g.fillRect(mx + rug.x*kx, my + rug.y*ky, rug.w*kx, rug.h*ky);
+  for (const c of allAvatars()){
+    g.fillStyle = c.isPlayer ? "#ffd97a" : c.color;
+    g.fillRect(mx + c.x*kx - 1, my + c.y*ky - 1, 2.5, 2.5);
+  }
+  for (const p of pets){ g.fillStyle = "#c9b89a"; g.fillRect(mx + p.x*kx - 1, my + p.y*ky - 1, 2, 2); }
+  g.strokeStyle = "rgba(255,217,122,.6)";
+  g.strokeRect(mx + cam.x*kx, my + cam.y*ky, VW*kx, VH*ky);
+}
+
+function roundRect(x,y,w,h,r){
+  g.beginPath();
+  g.moveTo(x+r,y); g.arcTo(x+w,y,x+w,y+h,r); g.arcTo(x+w,y+h,x,y+h,r);
+  g.arcTo(x,y+h,x,y,r); g.arcTo(x,y,x+w,y,r); g.closePath();
+}
+
+const STATUS_COLOR = {active:"#6ec98a", busy:"#d95757", away:"#e0c25e"};
+function drawGuide(c, t){
+  // 案内役：浮遊する水色ロボット（ヘッドセット＋点滅アンテナ）
+  const p = 2;
+  const x = Math.round(c.x - 8), y = Math.round(c.y - 16);
+  const bob = Math.round(Math.sin(t/280) * 1.5);   // 常にふわふわ浮遊
+  const by = y + bob;
+  g.fillStyle = "rgba(0,0,0,.22)";                 // 影は本体から離す（浮遊感）
+  g.fillRect(x + 2, Math.round(c.y) + 1, 12, 2);
+  if (c.inCall){
+    g.strokeStyle = "rgba(110,190,140,.8)"; g.lineWidth = 1;
+    g.strokeRect(x - 2, by - 6, 8*p + 4, 9*p + 3);
+  }
+  const BODY = "#57c2b6", DARK = "#3c8a82", LIGHT = "#c2f0ea";
+  g.fillStyle = DARK; g.fillRect(x + 3*p + 1, by - 5, 2, 5);          // アンテナ支柱
+  g.fillStyle = (Math.floor(t/300) % 2) ? "#ffd97a" : "#d97757";
+  g.fillRect(x + 3*p, by - 8, 4, 4);                                  // 点滅ライト
+  g.fillStyle = BODY; g.fillRect(x, by, 8*p, 4*p);                    // 頭
+  g.fillStyle = LIGHT; g.fillRect(x, by, 8*p, 2);                     // ハイライト
+  g.fillStyle = "#16302d"; g.fillRect(x + 1*p, by + 3, 6*p, 2*p);     // バイザー
+  g.fillStyle = "#7ff0e2";
+  if (c.blink > 0){
+    g.fillRect(x + 2*p, by + 2*p, p, 1); g.fillRect(x + 5*p, by + 2*p, p, 1);
+  } else {
+    g.fillRect(x + 2*p, by + 3, p, p); g.fillRect(x + 5*p, by + 3, p, p);
+  }
+  g.fillStyle = "#d97757";                                           // ヘッドセット＋マイク
+  g.fillRect(x - 1, by + 1*p, 2, 2*p);
+  g.fillRect(x + 8*p - 1, by + 1*p, 2, 2*p);
+  g.fillRect(x + 8*p, by + 3*p, 2, 2);
+  g.fillRect(x + 6*p, by + 4*p, 2*p, 2);
+  g.fillStyle = BODY; g.fillRect(x + 1*p, by + 4*p, 6*p, 3*p);        // 胴（脚なし）
+  g.fillStyle = DARK; g.fillRect(x + 1*p, by + 6*p, 6*p, 1*p);
+  g.fillStyle = BODY;
+  g.fillRect(x, by + 4*p + 2, 1*p, 2*p);
+  g.fillRect(x + 7*p, by + 4*p + 2, 1*p, 2*p);
+  g.fillStyle = STATUS_COLOR[c.status] || STATUS_COLOR.active;
+  g.fillRect(x + 8*p - 2, by - 2, 3, 3);
+}
+function drawChar(c, t){
+  if (c.guide){ drawGuide(c, t); return; }
+  const p = 2;
+  const dim = c.status === "away";
+  if (dim) g.globalAlpha = 0.5;
+  const x = Math.round(c.x - 9), y = Math.round(c.y - 14);
+  g.fillStyle = "rgba(0,0,0,.3)";
+  g.fillRect(x+1, Math.round(c.y)-1, 16, 2);
+  const bob = c.moving ? (Math.floor(t/130)%2) : 0;
+  const by = y + bob;
+  if (c.inCall){
+    g.strokeStyle = "rgba(110,190,140,.8)"; g.lineWidth = 1;
+    g.strokeRect(x - 2.5, by - 2.5, 9*p + 5, 7*p + 4);
+  }
+  g.fillStyle = c.color;
+  g.fillRect(x, by, 9*p, 5*p);
+  g.fillRect(x - p, by + p, p, 2*p);
+  g.fillRect(x + 9*p, by + p, p, 2*p);
+  g.fillStyle = EYE;
+  if (c.blink > 0){
+    g.fillRect(x + 2*p, by + p + 1, p, 1);
+    g.fillRect(x + 6*p, by + p + 1, p, 1);
+  } else {
+    g.fillRect(x + 2*p, by + p, p, p);
+    g.fillRect(x + 6*p, by + p, p, p);
+  }
+  g.fillStyle = c.color;
+  const ly = y + 5*p;
+  const step = c.moving ? Math.floor(t/130)%2 : 0;
+  if (step === 0){
+    g.fillRect(x + 1*p, ly, p, 2*p); g.fillRect(x + 4*p, ly, p, p); g.fillRect(x + 7*p, ly, p, 2*p);
+  } else {
+    g.fillRect(x + 1*p, ly, p, p); g.fillRect(x + 4*p, ly, p, 2*p); g.fillRect(x + 7*p, ly, p, p);
+  }
+  g.fillStyle = STATUS_COLOR[c.status] || STATUS_COLOR.active;
+  g.fillRect(x + 9*p - 1, by - 3, 3, 3);
+  if (dim) g.globalAlpha = 1;
+}
+
+function drawDesk(d, t){
+  g.fillStyle = "#4a3b2e"; g.fillRect(d.x, d.y, d.w, d.h);
+  g.fillStyle = "#5c4a3a"; g.fillRect(d.x, d.y, d.w, 2);
+  g.fillStyle = "#3a2e24"; g.fillRect(d.x+1, d.y+d.h, 2, 3); g.fillRect(d.x+d.w-3, d.y+d.h, 2, 3);
+  const mx = d.x + d.w/2 - 5;
+  g.fillStyle = "#1c1b19"; g.fillRect(mx, d.y - 8, 10, 8);
+  const on = allAvatars().some(c => Math.hypot(c.x - d.spot.x, c.y - d.spot.y) < 8 && c.status !== "away");
+  g.fillStyle = on ? "#8ec9a8" : "#30302c";
+  g.fillRect(mx+1, d.y - 7, 8, 6);
+  if (on){
+    g.fillStyle = "#2a4a3a";
+    const lines = 1 + Math.floor(t/300) % 3;
+    for (let i=0;i<lines;i++) g.fillRect(mx+2, d.y-6+i*2, 5-i, 1);
+  }
+}
+function drawRoom(r, t){
+  const T = 3;
+  g.fillStyle = "#57524b";
+  g.fillRect(r.x, r.y, r.w, T);
+  g.fillRect(r.x, r.y + r.h - T, r.w, T);
+  g.fillRect(r.x + r.w - T, r.y, T, r.h);
+  const gapTop = r.door.oy - r.door.gap/2, gapBot = r.door.oy + r.door.gap/2;
+  g.fillRect(r.x, r.y, T, gapTop - r.y);
+  g.fillRect(r.x, gapBot, T, r.y + r.h - gapBot);
+  if (roomLocks[r.id]){
+    g.fillStyle = "#d95757";
+    g.fillRect(r.x - 1, gapTop, 5, gapBot - gapTop);
+    g.font = "7px sans-serif"; g.textAlign = "center";
+    g.fillText("🔒", r.x + 2, gapTop - 2);
+  }
+  const tb = r.table;
+  g.fillStyle = "#4a3b2e"; g.fillRect(tb.x, tb.y, tb.w, tb.h);
+  g.fillStyle = "#5c4a3a"; g.fillRect(tb.x, tb.y, tb.w, 2);
+  g.fillStyle = "#e8e4da"; g.fillRect(r.x + 8, r.y + 5, 26, 12);
+  g.fillStyle = "#7aa88a";
+  g.fillRect(r.x + 10, r.y + 8, 14, 1); g.fillRect(r.x + 10, r.y + 11, 18, 1);
+  g.fillStyle = "#c97b93"; g.fillRect(r.x + 10, r.y + 14, 9, 1);
+  g.font = "6px monospace"; g.textAlign = "left";
+  g.fillStyle = "#8a847a";
+  g.fillText(r.label, r.x + r.w - 34, r.y + r.h - 7);
+}
+function drawBooth(b){
+  g.fillStyle = "rgba(255,255,255,.04)"; g.fillRect(b.x, b.y, b.w, b.h);
+  g.fillStyle = "#4f4a44";
+  g.fillRect(b.x, b.y, b.w, 3);
+  g.fillRect(b.x, b.y, 3, b.h - 6);
+  g.fillRect(b.x + b.w - 3, b.y, 3, b.h - 6);
+  g.font = "6px sans-serif"; g.textAlign = "center";
+  g.fillStyle = "#8a847a"; g.fillText("focus", b.x + b.w/2, b.y - 2);
+}
+function drawSofa(s){
+  g.fillStyle = "#7a5a48"; g.fillRect(s.x, s.y, s.w, s.h);
+  g.fillStyle = "#8a6a56"; g.fillRect(s.x + 2, s.y + 2, s.w - 4, s.h - 4);
+}
+function drawLoungeTable(){
+  const t = loungeTable;
+  g.fillStyle = "#4a3b2e"; g.fillRect(t.x, t.y, t.w, t.h);
+  g.fillStyle = "#5c4a3a"; g.fillRect(t.x, t.y, t.w, 2);
+  g.fillStyle = "#d97757"; g.fillRect(t.x + 5, t.y + 5, 3, 3);
+  g.fillStyle = "#e8d27a"; g.fillRect(t.x + 12, t.y + 5, 3, 3);
+}
+function drawCoffee(){
+  const c = coffee;
+  g.fillStyle = "#4a4642"; g.fillRect(c.x, c.y, c.w, c.h);
+  g.fillStyle = "#38342f"; g.fillRect(c.x+2, c.y+3, c.w-4, 6);
+  g.fillStyle = "#d97757"; g.fillRect(c.x+3, c.y+12, 4, 3);
+  g.fillStyle = "#e8d27a"; g.fillRect(c.x+9, c.y+12, 4, 3);
+  g.fillStyle = "#2a2724"; g.fillRect(c.x+5, c.y+17, 6, 4);
+  g.fillStyle = "#f0e5d8"; g.fillRect(c.x+6, c.y+18, 4, 2);
+}
+function drawPlant(p){
+  g.fillStyle = "#8a5a3a"; g.fillRect(p.x+2, p.y+12, 6, 6);
+  g.fillStyle = "#4a7a4a";
+  g.fillRect(p.x+3, p.y+2, 4, 10); g.fillRect(p.x, p.y+5, 4, 5); g.fillRect(p.x+6, p.y+4, 4, 6);
+  g.fillStyle = "#5d955d"; g.fillRect(p.x+4, p.y, 2, 4);
+}
+
+// ---------- UI ----------
+const chatlog = document.getElementById("chatlog");
+function addLog(name, text, sys){
+  const div = document.createElement("div");
+  if (sys){ div.className = "sys"; div.textContent = text; }
+  else {
+    const b = document.createElement("b");
+    b.textContent = name + ":";
+    div.appendChild(b);
+    div.append(" " + text);
+  }
+  chatlog.appendChild(div);
+  while (chatlog.children.length > 30) chatlog.removeChild(chatlog.firstChild);
+  chatlog.scrollTop = chatlog.scrollHeight;
+}
+
+function updateMembers(){
+  const list = document.getElementById("memberList");
+  const all = allAvatars();
+  document.getElementById("count").textContent = `${all.length} / 50`;
+  const icon = {active:"🟢", busy:"🔴", away:"🟡"};
+  list.innerHTML = "";
+  for (const c of all){
+    const div = document.createElement("div");
+    div.textContent = `${c.guide ? "🧭" : (icon[c.status] || "🟢")} ${c.name}${c.isPlayer ? "（自分）" : c.guide ? "（案内役）" : ""}`;
+    list.appendChild(div);
+  }
+}
+
+function updateLockBtn(){
+  const r = player ? roomAt(player.x, player.y) : null;
+  const lb = document.getElementById("lockBtn");
+  if (r){
+    lb.style.display = "inline-block";
+    lb.textContent = roomLocks[r.id] ? `🔓 ${r.label}を解錠` : `🔒 ${r.label}を施錠`;
+  } else lb.style.display = "none";
+}
+
+const stBtns = {active: document.getElementById("stActive"), busy: document.getElementById("stBusy"), away: document.getElementById("stAway")};
+function setStatus(st){
+  if (!player) return;
+  player.status = st;
+  Object.values(stBtns).forEach(b => b.classList.remove("active"));
+  stBtns[st].classList.add("active");
+  sendUpdate(true);
+  updateMembers();
+}
+for (const [st, btn] of Object.entries(stBtns)){
+  btn.addEventListener("click", () => { autoAway = false; lastInputAt = Date.now(); setStatus(st); });
+}
+document.querySelectorAll(".emote").forEach(btn => {
+  btn.addEventListener("click", () => { markInput(); sendEvent({type:"emote", emoji: btn.textContent}); });
+});
+
+function sendChat(mega){
+  const input = document.getElementById("chatInput");
+  const text = input.value.trim();
+  if (!text) return;
+  input.value = "";
+  markInput();
+  sendEvent({type: mega ? "mega" : "chat", text});
+}
+document.getElementById("sendBtn").addEventListener("click", () => sendChat(false));
+document.getElementById("chatInput").addEventListener("keydown", e => {
+  if (e.key === "Enter") sendChat(false);
+});
+document.getElementById("megaBtn").addEventListener("click", () => sendChat(true));
+document.getElementById("lockBtn").addEventListener("click", () => {
+  const r = player && roomAt(player.x, player.y);
+  if (r) sendEvent({type:"lock", room: r.id, locked: !roomLocks[r.id]});
+});
+
+window.addEventListener("keydown", e => {
+  if (typingNow()) return;
+  keys[e.key] = true;
+  markInput();
+  if (["ArrowLeft","ArrowRight","ArrowUp","ArrowDown"," "].includes(e.key)) e.preventDefault();
+  const em = {"1":"👋","2":"👍","3":"🎉","4":"😂"}[e.key];
+  if (em) sendEvent({type:"emote", emoji: em});
+});
+window.addEventListener("keyup", e => { keys[e.key] = false; });
+
+cv.addEventListener("click", e => {
+  if (!player) return;
+  markInput();
+  const rect = cv.getBoundingClientRect();
+  const lx = (e.clientX - rect.left) * (cv.width / rect.width) / SCALE + cam.x;
+  const ly = (e.clientY - rect.top) * (cv.height / rect.height) / SCALE + cam.y;
+  if (ly <= WALL_TOP + 8 || hitsWall(lx, ly)) return;
+  // ドア経由の簡易経路
+  const target = roomAt(lx, ly), cur = roomAt(player.x, player.y);
+  const p = [];
+  if (cur && cur !== target) p.push({x: cur.door.ix, y: cur.door.iy}, {x: cur.door.ox, y: cur.door.oy});
+  if (target && target !== cur){
+    if (roomLocks[target.id]) return; // 施錠中
+    p.push({x: target.door.ox, y: target.door.oy}, {x: target.door.ix, y: target.door.iy});
+  }
+  p.push({x: lx, y: ly});
+  player.path = p;
+});
+
+// ---------- 入室画面 ----------
+const swatchesEl = document.getElementById("swatches");
+let selColor = localStorage.getItem("pixeloffice_color") || CHAR_COLORS[0];
+for (const col of CHAR_COLORS){
+  const s = document.createElement("div");
+  s.className = "swatch" + (col === selColor ? " sel" : "");
+  s.style.background = col;
+  s.addEventListener("click", () => {
+    selColor = col;
+    document.querySelectorAll(".swatch").forEach(x => x.classList.remove("sel"));
+    s.classList.add("sel");
+  });
+  swatchesEl.appendChild(s);
+}
+document.getElementById("joinName").value = localStorage.getItem("pixeloffice_name") || (IS_GUIDE ? "案内役" : "");
+document.getElementById("joinBtn").addEventListener("click", async () => {
+  const name = document.getElementById("joinName").value.trim();
+  if (!name){ document.getElementById("joinErr").textContent = "なまえを入力してください"; return; }
+  try{
+    await join(name, selColor);
+    document.getElementById("joinOverlay").style.display = "none";
+  }catch(err){
+    document.getElementById("joinErr").textContent = err.message || "入室できませんでした";
+  }
+});
+document.getElementById("joinName").addEventListener("keydown", e => {
+  if (e.key === "Enter") document.getElementById("joinBtn").click();
+});
+
+// 時間帯の手動切り替え（自分の画面だけ。既定は自動＝実時刻）
+const PHASE_CYCLE = [null, "morning", "day", "evening", "night"];
+const PHASE_LABEL = {"null":"自動", morning:"🌅 朝", day:"☀️ 昼", evening:"🌆 夕", night:"🌙 夜"};
+let phaseIdx = 0;
+const timeBtn = document.getElementById("timeBtn");
+timeBtn.addEventListener("click", () => {
+  phaseIdx = (phaseIdx + 1) % PHASE_CYCLE.length;
+  phaseOverride = PHASE_CYCLE[phaseIdx];
+  timeBtn.textContent = "🕒 時間：" + PHASE_LABEL[String(phaseOverride)];
+});
+
+// ペットを配置（犬・猫。各自の画面ローカル）
+pets.push(makePet("dog"), makePet("cat"));
+
+// ---------- ループ ----------
+let last = performance.now();
+function loop(now){
+  const dt = Math.min((now - last) / 1000, 0.05);
+  last = now;
+  update(dt, now);
+  drawWorld(now);
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
